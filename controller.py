@@ -2,7 +2,6 @@ from common import Video, LOG_FORMAT, HOST, COM_PORT, GST_PORT
 
 import RPIO
 import subprocess
-import socket
 import time
 import logging
 logger = logging.getLogger()
@@ -104,46 +103,55 @@ class RaspiRobot2(object):
         distance_cm = pulse_len / 0.000058
         return distance_cm
 
-class Controller(RaspiRobot2):
+class Controller(VideoSrc, RaspiRobot2):
     """"""
     def __init__(self):
         """"""
-        #v = VideoSrc()
+        VideoSrc.__init__(self)
         RaspiRobot2.__init__(self)
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.bind((HOST, COM_PORT))
-        self.socket.listen(0)
-        
-    def connection(self):
-        """"""
-        conn, addr = self.socket.accept()
-        print  "Connected: %s" % addr[0]
-        alive = True 
-        while alive:
-            alive = self.process(conn.recv(1))
-        conn.close() 
-        print "Closed: %s" % addr[0]
+        RPIO.add_tcp_callback(COM_PORT, self.process)
+        RPIO.add_interrupt_callback(self.SW1_PIN, self.on_collision)
+        RPIO.add_interrupt_callback(self.SW2_PIN, self.on_collision)
 
-    def process(self, value):
+    def on_collision(self, gpio_id, value):
         """"""
-        if value == "w":
-            self.move(0, 0)
-            print "forward"
-        elif value == "s":
-            self.move(1, 1)
-            print "reverse"
-        elif value == "a":
-            self.move(1, 0)
-            print "left"
-        elif value == "d":
-            self.move(0, 1)
-            print "right"
-        else:
-            print value
-        return value
+        if gpio_id == self.SW1_PIN:
+            result = value 
+            if RPIO.input(self.SW2_PIN):
+               result +=2
+            self.send("%i-" % result)
+        elif gpio_id == self.SW2_PIN:
+            result = 2*value
+            if RPIO.input(self.SW1_PIN):
+               result +=1
+            self.send("%i-" % result)
+
+    def send(self, msg):
+        """"""
+        for key, value in RPIO._rpio._tcp_client_sockets.items():
+            value[0].send(msg)
+ 
+    def process(self, socket, msg):
+        """"""
+        for value in msg:
+            if value == "w":
+                self.move(0, 0)
+                print "forward"
+            elif value == "s":
+                self.move(1, 1)
+                print "reverse"
+            elif value == "a":
+                self.move(1, 0)
+                print "left"
+            elif value == "d":
+                self.move(0, 1)
+                print "right"
+            else:
+                print value
     
     def move(self, left_dir, right_dir):
         """"""
+        return
         self.set_motors(1, left_dir, 1, right_dir)
         time.sleep(0.03)
         self.set_motors(0, 0, 0, 0)
@@ -151,5 +159,4 @@ class Controller(RaspiRobot2):
 if __name__ == "__main__":
     logging.basicConfig(format=LOG_FORMAT, level="DEBUG")
     c = Controller()
-    while True:
-        c.connection()
+    RPIO.wait_for_interrupts() 

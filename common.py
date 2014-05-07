@@ -5,7 +5,7 @@ logger = logging.getLogger()
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(funcName)s - %(message)s"
 
-HOST = "192.168.2.3"
+HOST = "192.168.1.21"
 COM_PORT = 9000
 GST_PORT = 5000
 
