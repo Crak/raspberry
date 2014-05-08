@@ -1,7 +1,10 @@
-from common import Video, LOG_FORMAT, HOST, COM_PORT, GST_PORT
+from common import Video, encode, decode
+from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
+from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_RANGE
 
 import RPIO
 import subprocess
+import threading
 import time
 import logging
 logger = logging.getLogger()
@@ -107,24 +110,26 @@ class Controller(VideoSrc, RaspiRobot2):
     """"""
     def __init__(self):
         """"""
-        VideoSrc.__init__(self)
+        #VideoSrc.__init__(self)
         RaspiRobot2.__init__(self)
+
         RPIO.add_tcp_callback(COM_PORT, self.process)
         RPIO.add_interrupt_callback(self.SW1_PIN, self.on_collision)
         RPIO.add_interrupt_callback(self.SW2_PIN, self.on_collision)
+        
+        self.exit = False
+        self.start_timer()
 
     def on_collision(self, gpio_id, value):
         """"""
-        if gpio_id == self.SW1_PIN:
-            result = value 
-            if RPIO.input(self.SW2_PIN):
+        result = value 
+        if gpio_id == self.SW1_PIN and RPIO.input(self.SW2_PIN):
                result +=2
-            self.send("%i-" % result)
         elif gpio_id == self.SW2_PIN:
-            result = 2*value
+            result *= 2
             if RPIO.input(self.SW1_PIN):
                result +=1
-            self.send("%i-" % result)
+        self.send(encode(ID_BUMPER, result))
 
     def send(self, msg):
         """"""
@@ -133,19 +138,15 @@ class Controller(VideoSrc, RaspiRobot2):
  
     def process(self, socket, msg):
         """"""
-        for value in msg:
-            if value == "w":
+        for value in decode(msg):
+            if value == "1":
                 self.move(0, 0)
-                print "forward"
-            elif value == "s":
+            elif value == "2":
                 self.move(1, 1)
-                print "reverse"
-            elif value == "a":
-                self.move(1, 0)
-                print "left"
-            elif value == "d":
+            elif value == "3":
                 self.move(0, 1)
-                print "right"
+            elif value == "4":
+                self.move(1, 0)
             else:
                 print value
     
@@ -155,8 +156,28 @@ class Controller(VideoSrc, RaspiRobot2):
         self.set_motors(1, left_dir, 1, right_dir)
         time.sleep(0.03)
         self.set_motors(0, 0, 0, 0)
+        
+    def start_timer(self):
+        """"""
+        if not self.exit:
+            f = open("/proc/net/wireless", "r")
+            for line in f.readlines():
+                line = line.strip()
+                if line.startswith("wlan0"):
+                    link = line.split(".")[0].split(" ")[-1]
+                    #logger.debug(link)
+                    self.send(encode(ID_WLAN, link))
+            f.close()
+            threading.Timer(1, self.start_timer).start()
+        
+    def quit(self):
+        """"""
+        self.exit = True
 
 if __name__ == "__main__":
     logging.basicConfig(format=LOG_FORMAT, level="DEBUG")
     c = Controller()
-    RPIO.wait_for_interrupts() 
+    try:
+        RPIO.wait_for_interrupts()
+    except:
+        c.quit()

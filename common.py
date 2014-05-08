@@ -9,6 +9,24 @@ HOST = "192.168.1.21"
 COM_PORT = 9000
 GST_PORT = 5000
 
+ID_BUMPER = 1
+ID_ROVER = 2
+ID_WLAN = 3
+ID_RANGE = 4
+
+def encode(id, value):
+    """"""
+    return "%i@%s|" % (id, value)
+    
+def decode(msg):
+    """"""
+    result = []
+    for cmd in msg.split("|"):
+        tmp = cmd.split("@")
+        if tmp[0]:
+            result.append((int(tmp[0]), tmp[1]))
+    return result
+
 class Video(object):
     """"""
     ELEMENTS = []

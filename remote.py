@@ -3,13 +3,19 @@ from gi.repository import Vte, GLib
 from gi.repository import Gst, GstVideo
 from gi.repository import Gtk, Gdk, GdkPixbuf, GdkX11
 
-from common import Video, LOG_FORMAT, HOST, COM_PORT, GST_PORT
+from common import Video, encode, decode
+from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
+from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_RANGE
 
 import socket
 import threading
 import logging
 logger = logging.getLogger()
 
+IMG_ICON = "media/icon.png"
+IMG_TERMINAL = "media/icon_terminal.png"
+IMG_VIDEO = "media/icon_video.png"
+IMG_LOG = "media/icon_log.png"
 IMG_BUMPER = "media/bumper.png"
 IMG_BUMPER_LEFT = "media/bumper_left.png"
 IMG_BUMPER_RIGHT = "media/bumper_right.png"
@@ -94,15 +100,15 @@ class Communications(GObject.GObject):
         else:
             logger.info("Connected with %s:%i" % (host, port))
         
-    def send(self, char):
+    def send(self, msg):
         """"""
         try:
-            self.socket.send(char)
+            self.socket.send(msg)
         except Exception, e:
             logger.error(e)
             self.disconnect()
         else:
-            logger.debug(char)
+            logger.debug(msg)
             
     def receive(self):
         """"""
@@ -113,6 +119,8 @@ class Communications(GObject.GObject):
                 self.set_property("reception", msg)
             except socket.timeout:
                 continue
+            else:
+                logger.debug(msg)
 
     def disconnect(self):
         """"""
@@ -122,7 +130,13 @@ class Communications(GObject.GObject):
 
 class ControlPanel(Gtk.Window):
     """"""
-    CONTROL_KEYS = ["a", "w", "s", "d"]
+    CONTROL_KEYS = ["", "w", "s", "a", "d"]
+    
+    PIXBUF_ICON = GdkPixbuf.Pixbuf.new_from_file(IMG_ICON)
+    
+    PIXBUF_TERMINAL = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_TERMINAL, 64, 64)
+    PIXBUF_VIDEO = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_VIDEO, 64, 64)
+    PIXBUF_LOG = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_LOG, 64, 64)
     
     PIXBUF_BUMPER = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER)
     PIXBUF_BUMPER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_LEFT)
@@ -135,15 +149,16 @@ class ControlPanel(Gtk.Window):
     PIXBUF_ROVER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_RIGHT)
    
     PIXBUFS = [
-    PIXBUF_ROVER_LEFT,
+    PIXBUF_ROVER,
     PIXBUF_ROVER_FORWARD,
     PIXBUF_ROVER_REVERSE,
+    PIXBUF_ROVER_LEFT,
     PIXBUF_ROVER_RIGHT]    
 
     def __init__(self):
         """"""        
         Gtk.Window.__init__(self, title=self.__class__.__name__)
-        self.set_icon(self.PIXBUF_ROVER)
+        self.set_icon(self.PIXBUF_ICON)
         self.connect("delete-event", self.on_close)
         
         vbox = Gtk.VBox()
@@ -181,31 +196,52 @@ class ControlPanel(Gtk.Window):
         hbox = Gtk.HBox()
         vbox.pack_start(hbox, True, True, 5)
         
-        frame = Gtk.Frame()
-        hbox.pack_start(frame, True, True, 5)
+        notebook = Gtk.Notebook()
+        notebook.set_tab_pos(Gtk.PositionType.LEFT)
+        hbox.pack_start(notebook, True, True, 5)
+
+        vte = Vte.Terminal()
+        vte.set_scrollback_lines(-1)
+        vte.connect("child-exited", self.on_close)
+        vte.fork_command_full(Vte.PtyFlags.DEFAULT, None, ["/bin/bash"], 
+        None, GLib.SpawnFlags.DO_NOT_REAP_CHILD, None, None)
+        notebook.append_page(vte, Gtk.Image.new_from_pixbuf(self.PIXBUF_TERMINAL))
 
         drawing_area = Gtk.DrawingArea()
-        frame.add(drawing_area)
+        notebook.append_page(drawing_area, Gtk.Image.new_from_pixbuf(self.PIXBUF_VIDEO))
         
-        vbox2 = Gtk.VBox()
-        hbox.pack_start(vbox2, False, False, 5)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_size_request(-1, 150)
+        notebook.append_page(scroll, Gtk.Image.new_from_pixbuf(self.PIXBUF_LOG))
+        
+        textview = Gtk.TextView()
+        textview.set_editable(False)
+        textview.set_wrap_mode(2)
+        scroll.add(textview)
+
+        log_stream = LogStream(textview)
+        logging.basicConfig(format=LOG_FORMAT, stream=log_stream, level="DEBUG")
+
+        vbox = Gtk.VBox()
+        hbox.pack_start(vbox, False, False, 5)
 
         self.rover_img = Gtk.Image.new_from_pixbuf(self.PIXBUF_ROVER)
         self.bumper_img = Gtk.Image.new_from_pixbuf(self.PIXBUF_BUMPER)
-        vbox2.pack_start(self.bumper_img, False, False, 5)
+        vbox.pack_start(self.bumper_img, False, False, 5)
         
         button = Gtk.ToggleButton()
         button.set_image(self.rover_img)
         button.connect("focus-out-event", self.on_control)
         button.connect("key-press-event", self.on_control)
         button.connect("key-release-event", self.on_control)
-        vbox2.pack_start(button, False, False, 5)
+        vbox.pack_start(button, False, False, 5)
 
         self.telemetry_store = Gtk.ListStore(str, str, str)
+        self.telemetry_store.append(["wlan0", "", "%"])
         self.telemetry_store.append(["Range", "", "cm"])
         
         frame = Gtk.Frame()
-        vbox2.pack_start(frame, True, True, 5)
+        vbox.pack_start(frame, True, True, 5)
         
         tree = Gtk.TreeView(self.telemetry_store)
         tree.set_headers_visible(False)
@@ -225,39 +261,16 @@ class ControlPanel(Gtk.Window):
         renderer = Gtk.CellRendererText()
         column = Gtk.TreeViewColumn("units", renderer, text=2)
         tree.append_column(column)
-        
-        hbox = Gtk.HBox()
-        vbox.pack_start(hbox, False, False, 5)
-        
-        notebook = Gtk.Notebook()
-        notebook.set_tab_pos(1)
-        hbox.pack_start(notebook, True, True, 5)
-        
-        vte = Vte.Terminal()
-        vte.set_scrollback_lines(-1)
-        vte.connect("child-exited", self.on_close)
-        vte.fork_command_full(Vte.PtyFlags.DEFAULT, None, ["/bin/bash"], 
-        None, GLib.SpawnFlags.DO_NOT_REAP_CHILD, None, None)
-        notebook.append_page(vte, Gtk.Label("Terminal"))
-        
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_size_request(-1, 150)
-        notebook.append_page(scroll, Gtk.Label("Log"))
-        
-        textview = Gtk.TextView()
-        textview.set_editable(False)
-        textview.set_wrap_mode(2)
-        scroll.add(textview)
 
-        log_stream = LogStream(textview)
-        logging.basicConfig(format=LOG_FORMAT, stream=log_stream, level="DEBUG")
-        
-        #self.maximize()
+        self.maximize()
         self.show_all()
+        
+        notebook.set_current_page(1)
+        self.video = VideoSink(drawing_area.get_property("window").get_xid())
+        notebook.set_current_page(0)
         
         self.coms = Communications()
         self.coms.connect("notify::reception", self.on_reception)
-        self.video = VideoSink(drawing_area.get_property("window").get_xid())
         
     def on_connect(self, widget, gparam):
         """"""
@@ -271,25 +284,33 @@ class ControlPanel(Gtk.Window):
             
     def on_reception(self, obj, params):
         """"""
-        for msg in obj.get_property(params.name).split("-"):
-            if msg == "0":
-                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_BOTH)
-            elif msg == "1":
-                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_RIGHT)
-            elif msg == "2":
-                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_LEFT)
-            elif msg == "3":
-                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER)
-            elif msg == "4":
-                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_FORWARD)
-            elif msg == "5":
-                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_REVERSE)
-            elif msg == "6":
-                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_LEFT)
-            elif msg == "7":
-                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_RIGHT)
-            elif msg == "8":
-                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER)
+        for msg in decode(obj.get_property(params.name)):
+            id = msg[0]
+            if id == ID_BUMPER:
+                if msg[1] == "0":
+                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_BOTH)
+                elif msg[1] == "1":
+                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_RIGHT)
+                elif msg[1] == "2":
+                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_LEFT)
+                elif msg[1] == "3":
+                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER)
+            elif id == ID_ROVER:
+                if msg[1] == "0":
+                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER)
+                elif msg[1] == "1":
+                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_FORWARD)
+                elif msg[1] == "2":
+                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_REVERSE)
+                elif msg[1] == "3":
+                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_LEFT)
+                elif msg[1] == "4":
+                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_RIGHT)
+            elif id == ID_WLAN:
+                iter = self.telemetry_store.get_iter_first()
+                self.telemetry_store.set_value(iter, 1, msg[1])
+            else:
+                logger.info(msg)
         
     def on_control(self, widget, event):
         """"""
@@ -299,13 +320,13 @@ class ControlPanel(Gtk.Window):
             elif event.type == Gdk.EventType.KEY_PRESS:
                 key = event.string
                 if key in self.CONTROL_KEYS:
-                    self.coms.send(key)
                     i = self.CONTROL_KEYS.index(key)
+                    self.coms.send(encode(ID_ROVER, i))
                     self.rover_img.set_from_pixbuf(self.PIXBUFS[i])
             elif event.type == Gdk.EventType.KEY_RELEASE:
                 key = event.string
                 if key in self.CONTROL_KEYS:
-                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER)
+                    self.rover_img.set_from_pixbuf(self.PIXBUFS[0])
 
     def on_close(self, widget, event=None):
         """"""
@@ -316,5 +337,6 @@ class ControlPanel(Gtk.Window):
 if __name__ == "__main__":
     GObject.threads_init()
     c = ControlPanel()
+    logger.info("System ready")
     Gtk.main()
     
