@@ -1,10 +1,12 @@
 from gi.repository import GObject
+from gi.repository import Vte, GLib
 from gi.repository import Gst, GstVideo
-from gi.repository import Gtk, GdkPixbuf, GdkX11
+from gi.repository import Gtk, Gdk, GdkPixbuf, GdkX11
 
 from common import Video, LOG_FORMAT, HOST, COM_PORT, GST_PORT
 
 import socket
+import threading
 import logging
 logger = logging.getLogger()
 
@@ -23,12 +25,12 @@ class LogStream(object):
     def __init__(self, textview):
         """"""
         self.view = textview
+        self.buffer = textview.get_buffer()
         
     def write(self, text):
         """"""
-        buffer = self.view.get_buffer()
-        iter = buffer.get_end_iter()
-        buffer.insert(iter, text)
+        iter = self.buffer.get_end_iter()
+        self.buffer.insert(iter, text)
         self.view.scroll_to_iter(iter, 0, False, 0, 0)
         
     def flush(self):
@@ -43,11 +45,13 @@ class VideoSink(Video):
     (("rtph264depay", None), []),
     (("avdec_h264", None), []),
     (("videoconvert", None), []),
-    (("autovideosink", None), [("sync", False)])]
+    #(("autovideosink", None), [("sync", False)])]
+    (("autovideosink", None), [])]
     
-    def __init__(self):
+    def __init__(self, xid):
         """"""
         Video.__init__(self)
+        self.xid = xid
         bus = self.pipeline.get_bus()
         bus.enable_sync_message_emission()
         bus.connect("sync-message::element", self.on_gst_sync)
@@ -67,31 +71,48 @@ class VideoSink(Video):
             msg.src.set_window_handle(self.xid)
             logger.debug("prepare-window-handle")
 
-class Communications(object):
+class Communications(GObject.GObject):
     """"""
+    reception = GObject.property(type=str, default="")
+    
     def __init__(self):
         """"""
+        GObject.GObject.__init__(self)
         self.socket = None
+        self.thread = None
         
     def new_connection(self, host, port):
         """"""
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(1)
             self.socket.connect((host, port))
+            self.thread = threading.Thread(target=self.receive)
+            self.thread.start()
         except Exception, e:
             logger.error(e)
         else:
             logger.info("Connected with %s:%i" % (host, port))
-            return True
         
     def send(self, char):
         """"""
         try:
             self.socket.send(char)
-        except:
-            logger.warning("Connection Closed")
+        except Exception, e:
+            logger.error(e)
+            self.disconnect()
         else:
             logger.debug(char)
+            
+    def receive(self):
+        """"""
+        msg = True
+        while msg and self.socket:
+            try:
+                msg = self.socket.recv(1024)
+                self.set_property("reception", msg)
+            except socket.timeout:
+                continue
 
     def disconnect(self):
         """"""
@@ -99,7 +120,7 @@ class Communications(object):
             self.socket.close()
             self.socket = None
 
-class ControlPanel(Gtk.Window, VideoSink, Communications):
+class ControlPanel(Gtk.Window):
     """"""
     CONTROL_KEYS = ["a", "w", "s", "d"]
     
@@ -112,22 +133,18 @@ class ControlPanel(Gtk.Window, VideoSink, Communications):
     PIXBUF_ROVER_REVERSE = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_REVERSE)
     PIXBUF_ROVER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_LEFT)
     PIXBUF_ROVER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_RIGHT)
-    
+   
     PIXBUFS = [
     PIXBUF_ROVER_LEFT,
     PIXBUF_ROVER_FORWARD,
     PIXBUF_ROVER_REVERSE,
-    PIXBUF_ROVER_RIGHT]
+    PIXBUF_ROVER_RIGHT]    
 
     def __init__(self):
-        """"""
-        VideoSink.__init__(self)
-        Communications.__init__(self)
-        
+        """"""        
         Gtk.Window.__init__(self, title=self.__class__.__name__)
+        self.set_icon(self.PIXBUF_ROVER)
         self.connect("delete-event", self.on_close)
-        self.connect("key-press-event", self.on_key_press)
-        self.connect("key-release-event", self.on_key_release)
         
         vbox = Gtk.VBox()
         self.add(vbox)
@@ -173,19 +190,24 @@ class ControlPanel(Gtk.Window, VideoSink, Communications):
         vbox2 = Gtk.VBox()
         hbox.pack_start(vbox2, False, False, 5)
 
-        self.bumper = Gtk.Image.new_from_pixbuf(self.PIXBUF_BUMPER)
-        vbox2.pack_start(self.bumper, False, False, 5)
+        self.rover_img = Gtk.Image.new_from_pixbuf(self.PIXBUF_ROVER)
+        self.bumper_img = Gtk.Image.new_from_pixbuf(self.PIXBUF_BUMPER)
+        vbox2.pack_start(self.bumper_img, False, False, 5)
         
-        self.rover = Gtk.Image.new_from_pixbuf(self.PIXBUF_ROVER)
-        vbox2.pack_start(self.rover, False, False, 5)
+        button = Gtk.ToggleButton()
+        button.set_image(self.rover_img)
+        button.connect("focus-out-event", self.on_control)
+        button.connect("key-press-event", self.on_control)
+        button.connect("key-release-event", self.on_control)
+        vbox2.pack_start(button, False, False, 5)
 
-        self.store = Gtk.ListStore(str, str, str)
-        self.store.append(["Range", str(10.7), "cm"])
+        self.telemetry_store = Gtk.ListStore(str, str, str)
+        self.telemetry_store.append(["Range", "", "cm"])
         
         frame = Gtk.Frame()
         vbox2.pack_start(frame, True, True, 5)
         
-        tree = Gtk.TreeView(self.store)
+        tree = Gtk.TreeView(self.telemetry_store)
         tree.set_headers_visible(False)
         tree.set_enable_search(False)
         frame.add(tree)        
@@ -207,11 +229,20 @@ class ControlPanel(Gtk.Window, VideoSink, Communications):
         hbox = Gtk.HBox()
         vbox.pack_start(hbox, False, False, 5)
         
-        frame = Gtk.Frame()
-        hbox.pack_start(frame, True, True, 5)
-
+        notebook = Gtk.Notebook()
+        notebook.set_tab_pos(1)
+        hbox.pack_start(notebook, True, True, 5)
+        
+        vte = Vte.Terminal()
+        vte.set_scrollback_lines(-1)
+        vte.connect("child-exited", self.on_close)
+        vte.fork_command_full(Vte.PtyFlags.DEFAULT, None, ["/bin/bash"], 
+        None, GLib.SpawnFlags.DO_NOT_REAP_CHILD, None, None)
+        notebook.append_page(vte, Gtk.Label("Terminal"))
+        
         scroll = Gtk.ScrolledWindow()
-        frame.add(scroll)
+        scroll.set_size_request(-1, 150)
+        notebook.append_page(scroll, Gtk.Label("Log"))
         
         textview = Gtk.TextView()
         textview.set_editable(False)
@@ -221,44 +252,69 @@ class ControlPanel(Gtk.Window, VideoSink, Communications):
         log_stream = LogStream(textview)
         logging.basicConfig(format=LOG_FORMAT, stream=log_stream, level="DEBUG")
         
+        #self.maximize()
         self.show_all()
         
-        self.xid = drawing_area.get_property("window").get_xid()
+        self.coms = Communications()
+        self.coms.connect("notify::reception", self.on_reception)
+        self.video = VideoSink(drawing_area.get_property("window").get_xid())
         
     def on_connect(self, widget, gparam):
         """"""
         if widget.get_active():
             host = self.host_ip.get_text()
-            gst_port = int(self.gst_port.get_value())
-            com_port = int(self.com_port.get_value())
-            VideoSink.new_connection(self, host, gst_port)
-            Communications.new_connection(self, host, com_port)
+            self.video.new_connection(host, int(self.gst_port.get_value()))
+            self.coms.new_connection(host, int(self.com_port.get_value()))
         else:
-            VideoSink.pause(self)
-            Communications.disconnect(self)
+            self.video.pause()
+            self.coms.disconnect()
+            
+    def on_reception(self, obj, params):
+        """"""
+        for msg in obj.get_property(params.name).split("-"):
+            if msg == "0":
+                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_BOTH)
+            elif msg == "1":
+                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_RIGHT)
+            elif msg == "2":
+                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_LEFT)
+            elif msg == "3":
+                self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER)
+            elif msg == "4":
+                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_FORWARD)
+            elif msg == "5":
+                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_REVERSE)
+            elif msg == "6":
+                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_LEFT)
+            elif msg == "7":
+                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_RIGHT)
+            elif msg == "8":
+                self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER)
         
-    def on_key_press(self, widget, event):
+    def on_control(self, widget, event):
         """"""
-        key = event.string
-        if key in self.CONTROL_KEYS:
-            Communications.send(self, key)
-            i = self.CONTROL_KEYS.index(key)
-            self.rover.set_from_pixbuf(self.PIXBUFS[i])
-
-    def on_key_release(self, widget, event):
-        """"""
-        key = event.string
-        if key in self.CONTROL_KEYS:
-            self.rover.set_from_pixbuf(self.PIXBUF_ROVER)
+        if widget.get_active():
+            if event.type == Gdk.EventType.FOCUS_CHANGE:
+                widget.set_active(False)
+            elif event.type == Gdk.EventType.KEY_PRESS:
+                key = event.string
+                if key in self.CONTROL_KEYS:
+                    self.coms.send(key)
+                    i = self.CONTROL_KEYS.index(key)
+                    self.rover_img.set_from_pixbuf(self.PIXBUFS[i])
+            elif event.type == Gdk.EventType.KEY_RELEASE:
+                key = event.string
+                if key in self.CONTROL_KEYS:
+                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER)
 
     def on_close(self, widget, event=None):
         """"""
-        VideoSink.quit(self)
-        Communications.disconnect(self)
+        self.video.quit()
+        self.coms.disconnect()
         Gtk.main_quit()
 
 if __name__ == "__main__":
     GObject.threads_init()
     c = ControlPanel()
-    logger.info("System ready")
     Gtk.main()
+    
