@@ -1,5 +1,6 @@
 from gi.repository import Gst
 
+import pickle
 import logging
 logger = logging.getLogger()
 
@@ -11,22 +12,16 @@ GST_PORT = 5000
 
 ID_BUMPER = 1
 ID_ROVER = 2
-ID_WLAN = 3
-ID_RANGE = 4
+ID_TELEMETRY = 3
 
 def encode(id, value):
     """"""
-    return "%i@%s|" % (id, value)
+    return pickle.dumps((id, value))
     
 def decode(msg):
     """"""
-    result = []
-    for cmd in msg.split("|"):
-        tmp = cmd.split("@")
-        if tmp[0]:
-            result.append((int(tmp[0]), tmp[1]))
-    return result
-
+    return pickle.loads(msg)
+    
 class Video(object):
     """"""
     ELEMENTS = []

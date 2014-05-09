@@ -1,6 +1,6 @@
 from common import Video, encode, decode
 from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
-from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_RANGE
+from common import ID_BUMPER, ID_ROVER, ID_TELEMETRY
 
 import RPIO
 import subprocess
@@ -25,10 +25,15 @@ class VideoSrc(Video):
         """"""
         Video.__init__(self)
         logger.debug(" ".join(RASPIVID))
-        p = subprocess.Popen(RASPIVID, stdout=subprocess.PIPE)
+        self.raspivid = subprocess.Popen(RASPIVID, stdout=subprocess.PIPE)
         src = self.pipeline.get_by_name("local")
-        src.set_property("fd", p.stdout.fileno())
+        src.set_property("fd", self.raspivid.stdout.fileno())
         self.play()
+        
+    def quit(self):
+        """"""
+        Video.quit(self)
+        self.raspivid.terminate()
 
 class RaspiRobot2(object):
     """"""
@@ -67,12 +72,9 @@ class RaspiRobot2(object):
         
         RPIO.setup(self.TRIGGER_PIN, RPIO.OUT)
         RPIO.setup(self.ECHO_PIN, RPIO.IN)
-
-    def set_motors(self, left_go, left_dir, right_go, right_dir):
-        RPIO.output(self.LEFT_GO_PIN, left_go)
-        RPIO.output(self.LEFT_DIR_PIN, left_dir)
-        RPIO.output(self.RIGHT_GO_PIN, right_go)
-        RPIO.output(self.RIGHT_DIR_PIN, right_dir)
+        
+        RPIO.add_interrupt_callback(self.SW1_PIN, self.on_collision)
+        RPIO.add_interrupt_callback(self.SW2_PIN, self.on_collision)
 
     def set_led1(self, state):
         RPIO.output(self.LED1_PIN, state)
@@ -84,41 +86,25 @@ class RaspiRobot2(object):
         RPIO.output(self.OC1_PIN, state)
 
     def set_oc2(self, state):
-        RPIO.output(self.OC2_PIN, state)    
+        RPIO.output(self.OC2_PIN, state)
 
-    def _send_trigger_pulse(self):
-        RPIO.output(self.TRIGGER_PIN, True)
-        time.sleep(0.0001)
-        RPIO.output(self.TRIGGER_PIN, False)
+    def set_motors(self, left_go, left_dir, right_go, right_dir):
+        RPIO.output(self.LEFT_GO_PIN, left_go)
+        RPIO.output(self.LEFT_DIR_PIN, left_dir)
+        RPIO.output(self.RIGHT_GO_PIN, right_go)
+        RPIO.output(self.RIGHT_DIR_PIN, right_dir)
 
-    def _wait_for_echo(self, value, timeout):
-        count = timeout
-        while RPIO.input(self.ECHO_PIN) != value and count > 0:
-            count = count - 1
-
-    def get_distance(self):
-        self._send_trigger_pulse()
-        self._wait_for_echo(True, 10000)
-        start = time.time()
-        self._wait_for_echo(False, 10000)
-        finish = time.time()
-        pulse_len = finish - start
-        distance_cm = pulse_len / 0.000058
-        return distance_cm
-
-class Controller(VideoSrc, RaspiRobot2):
-    """"""
-    def __init__(self):
+    def move(self, left_dir, right_dir):
         """"""
-        #VideoSrc.__init__(self)
-        RaspiRobot2.__init__(self)
+        #return
+        self.set_motors(1, left_dir, 1, right_dir)
+        time.sleep(0.03)
+        self.set_motors(0, 0, 0, 0)        
 
-        RPIO.add_tcp_callback(COM_PORT, self.process)
-        RPIO.add_interrupt_callback(self.SW1_PIN, self.on_collision)
-        RPIO.add_interrupt_callback(self.SW2_PIN, self.on_collision)
-        
-        self.exit = False
-        self.start_timer()
+    def send(self, msg):
+        """"""
+        for key, value in RPIO._rpio._tcp_client_sockets.items():
+            value[0].send(msg)
 
     def on_collision(self, gpio_id, value):
         """"""
@@ -131,14 +117,39 @@ class Controller(VideoSrc, RaspiRobot2):
                result +=1
         self.send(encode(ID_BUMPER, result))
 
-    def send(self, msg):
+class Controller(RaspiRobot2):
+    """"""
+    def __init__(self):
         """"""
-        for key, value in RPIO._rpio._tcp_client_sockets.items():
-            value[0].send(msg)
+        RaspiRobot2.__init__(self)
+        
+        self.exit = False
+        self.video = VideoSrc()
+        RPIO.add_tcp_callback(COM_PORT, self.process)
+        self.start_timer()
  
+    def start_timer(self):
+        """"""
+        if not self.exit:
+            data = ["OK", self.wlan_status()]
+            self.send(encode(ID_TELEMETRY, data))
+            threading.Timer(1, self.start_timer).start()
+            
+    def wlan_status(self):
+        """"""
+        link = ""
+        f = open("/proc/net/wireless", "r")
+        for line in f.readlines():
+            line = line.strip()
+            if line.startswith("wlan0"):
+                link = line.split(".")[0].split(" ")[-1]
+        f.close()
+        return link
+
     def process(self, socket, msg):
         """"""
-        for value in decode(msg):
+        id, value = decode(msg)
+        if id == ID_ROVER:
             if value == "1":
                 self.move(0, 0)
             elif value == "2":
@@ -147,32 +158,13 @@ class Controller(VideoSrc, RaspiRobot2):
                 self.move(0, 1)
             elif value == "4":
                 self.move(1, 0)
-            else:
-                print value
-    
-    def move(self, left_dir, right_dir):
-        """"""
-        return
-        self.set_motors(1, left_dir, 1, right_dir)
-        time.sleep(0.03)
-        self.set_motors(0, 0, 0, 0)
-        
-    def start_timer(self):
-        """"""
-        if not self.exit:
-            f = open("/proc/net/wireless", "r")
-            for line in f.readlines():
-                line = line.strip()
-                if line.startswith("wlan0"):
-                    link = line.split(".")[0].split(" ")[-1]
-                    #logger.debug(link)
-                    self.send(encode(ID_WLAN, link))
-            f.close()
-            threading.Timer(1, self.start_timer).start()
+        else:
+            logger.info(id, value)
         
     def quit(self):
         """"""
         self.exit = True
+        self.video.quit()
 
 if __name__ == "__main__":
     logging.basicConfig(format=LOG_FORMAT, level="DEBUG")
@@ -180,4 +172,5 @@ if __name__ == "__main__":
     try:
         RPIO.wait_for_interrupts()
     except:
+        logger.exception("Exception")
         c.quit()

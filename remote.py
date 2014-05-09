@@ -5,7 +5,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GdkX11
 
 from common import Video, encode, decode
 from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
-from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_RANGE
+from common import ID_BUMPER, ID_ROVER, ID_TELEMETRY
 
 import socket
 import threading
@@ -25,6 +25,36 @@ IMG_ROVER_FORWARD = "media/rover_forward.png"
 IMG_ROVER_REVERSE = "media/rover_reverse.png"
 IMG_ROVER_LEFT = "media/rover_left.png"
 IMG_ROVER_RIGHT = "media/rover_right.png"
+
+PIXBUF_ICON = GdkPixbuf.Pixbuf.new_from_file(IMG_ICON)
+
+PIXBUF_TERMINAL = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_TERMINAL, 64, 64)
+PIXBUF_VIDEO = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_VIDEO, 64, 64)
+PIXBUF_LOG = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_LOG, 64, 64)
+
+PIXBUF_BUMPER = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER)
+PIXBUF_BUMPER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_LEFT)
+PIXBUF_BUMPER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_RIGHT)
+PIXBUF_BUMPER_BOTH = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_BOTH)
+
+PIXBUF_ROVER = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER)
+PIXBUF_ROVER_FORWARD = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_FORWARD)
+PIXBUF_ROVER_REVERSE = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_REVERSE)
+PIXBUF_ROVER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_LEFT)
+PIXBUF_ROVER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_RIGHT)
+
+BUMPER_PIXBUFS = [
+PIXBUF_BUMPER_BOTH,
+PIXBUF_BUMPER_RIGHT,
+PIXBUF_BUMPER_LEFT,
+PIXBUF_BUMPER]
+
+ROVER_PIXBUFS = [
+PIXBUF_ROVER,
+PIXBUF_ROVER_FORWARD,
+PIXBUF_ROVER_REVERSE,
+PIXBUF_ROVER_LEFT,
+PIXBUF_ROVER_RIGHT]    
 
 class LogStream(object):
     """"""
@@ -108,7 +138,8 @@ class Communications(GObject.GObject):
             logger.error(e)
             self.disconnect()
         else:
-            logger.debug(msg)
+            #logger.debug(msg)
+            pass
             
     def receive(self):
         """"""
@@ -120,7 +151,8 @@ class Communications(GObject.GObject):
             except socket.timeout:
                 continue
             else:
-                logger.debug(msg)
+                #logger.debug(decode(msg))
+                pass
 
     def disconnect(self):
         """"""
@@ -131,34 +163,11 @@ class Communications(GObject.GObject):
 class ControlPanel(Gtk.Window):
     """"""
     CONTROL_KEYS = ["", "w", "s", "a", "d"]
-    
-    PIXBUF_ICON = GdkPixbuf.Pixbuf.new_from_file(IMG_ICON)
-    
-    PIXBUF_TERMINAL = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_TERMINAL, 64, 64)
-    PIXBUF_VIDEO = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_VIDEO, 64, 64)
-    PIXBUF_LOG = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_LOG, 64, 64)
-    
-    PIXBUF_BUMPER = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER)
-    PIXBUF_BUMPER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_LEFT)
-    PIXBUF_BUMPER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_RIGHT)
-    PIXBUF_BUMPER_BOTH = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_BOTH)
-    PIXBUF_ROVER = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER)
-    PIXBUF_ROVER_FORWARD = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_FORWARD)
-    PIXBUF_ROVER_REVERSE = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_REVERSE)
-    PIXBUF_ROVER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_LEFT)
-    PIXBUF_ROVER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_RIGHT)
-   
-    PIXBUFS = [
-    PIXBUF_ROVER,
-    PIXBUF_ROVER_FORWARD,
-    PIXBUF_ROVER_REVERSE,
-    PIXBUF_ROVER_LEFT,
-    PIXBUF_ROVER_RIGHT]    
 
     def __init__(self):
         """"""        
         Gtk.Window.__init__(self, title=self.__class__.__name__)
-        self.set_icon(self.PIXBUF_ICON)
+        self.set_icon(PIXBUF_ICON)
         self.connect("delete-event", self.on_close)
         
         vbox = Gtk.VBox()
@@ -205,14 +214,14 @@ class ControlPanel(Gtk.Window):
         vte.connect("child-exited", self.on_close)
         vte.fork_command_full(Vte.PtyFlags.DEFAULT, None, ["/bin/bash"], 
         None, GLib.SpawnFlags.DO_NOT_REAP_CHILD, None, None)
-        notebook.append_page(vte, Gtk.Image.new_from_pixbuf(self.PIXBUF_TERMINAL))
+        notebook.append_page(vte, Gtk.Image.new_from_pixbuf(PIXBUF_TERMINAL))
 
         drawing_area = Gtk.DrawingArea()
-        notebook.append_page(drawing_area, Gtk.Image.new_from_pixbuf(self.PIXBUF_VIDEO))
+        notebook.append_page(drawing_area, Gtk.Image.new_from_pixbuf(PIXBUF_VIDEO))
         
         scroll = Gtk.ScrolledWindow()
         scroll.set_size_request(-1, 150)
-        notebook.append_page(scroll, Gtk.Image.new_from_pixbuf(self.PIXBUF_LOG))
+        notebook.append_page(scroll, Gtk.Image.new_from_pixbuf(PIXBUF_LOG))
         
         textview = Gtk.TextView()
         textview.set_editable(False)
@@ -225,8 +234,8 @@ class ControlPanel(Gtk.Window):
         vbox = Gtk.VBox()
         hbox.pack_start(vbox, False, False, 5)
 
-        self.rover_img = Gtk.Image.new_from_pixbuf(self.PIXBUF_ROVER)
-        self.bumper_img = Gtk.Image.new_from_pixbuf(self.PIXBUF_BUMPER)
+        self.rover_img = Gtk.Image.new_from_pixbuf(PIXBUF_ROVER)
+        self.bumper_img = Gtk.Image.new_from_pixbuf(PIXBUF_BUMPER)
         vbox.pack_start(self.bumper_img, False, False, 5)
         
         button = Gtk.ToggleButton()
@@ -236,14 +245,17 @@ class ControlPanel(Gtk.Window):
         button.connect("key-release-event", self.on_control)
         vbox.pack_start(button, False, False, 5)
 
-        self.telemetry_store = Gtk.ListStore(str, str, str)
-        self.telemetry_store.append(["wlan0", "", "%"])
-        self.telemetry_store.append(["Range", "", "cm"])
+        self.store = Gtk.ListStore(str, str, str)
+        self.store.append(["Battery Status", "", ""])
+        self.store.append(["Wlan Link", "", "%"])
+        self.store.append(["Range Finder", "", "cm"])
+        self.store.append(["Left Encoder", "", "cm"])
+        self.store.append(["Right Encoder", "", "cm"])
         
         frame = Gtk.Frame()
         vbox.pack_start(frame, True, True, 5)
         
-        tree = Gtk.TreeView(self.telemetry_store)
+        tree = Gtk.TreeView(self.store)
         tree.set_headers_visible(False)
         tree.set_enable_search(False)
         frame.add(tree)        
@@ -253,13 +265,14 @@ class ControlPanel(Gtk.Window):
         tree.append_column(column)
         
         renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("data", renderer, text=1)
         renderer.set_alignment(1, 0)
+        column = Gtk.TreeViewColumn("data", renderer, text=1)
         column.set_expand(True)
         tree.append_column(column)
         
         renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("units", renderer, text=2)
+        renderer.set_alignment(1, 0)
+        column = Gtk.TreeViewColumn("unit", renderer, text=2)
         tree.append_column(column)
 
         self.maximize()
@@ -284,33 +297,18 @@ class ControlPanel(Gtk.Window):
             
     def on_reception(self, obj, params):
         """"""
-        for msg in decode(obj.get_property(params.name)):
-            id = msg[0]
-            if id == ID_BUMPER:
-                if msg[1] == "0":
-                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_BOTH)
-                elif msg[1] == "1":
-                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_RIGHT)
-                elif msg[1] == "2":
-                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER_LEFT)
-                elif msg[1] == "3":
-                    self.bumper_img.set_from_pixbuf(self.PIXBUF_BUMPER)
-            elif id == ID_ROVER:
-                if msg[1] == "0":
-                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER)
-                elif msg[1] == "1":
-                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_FORWARD)
-                elif msg[1] == "2":
-                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_REVERSE)
-                elif msg[1] == "3":
-                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_LEFT)
-                elif msg[1] == "4":
-                    self.rover_img.set_from_pixbuf(self.PIXBUF_ROVER_RIGHT)
-            elif id == ID_WLAN:
-                iter = self.telemetry_store.get_iter_first()
-                self.telemetry_store.set_value(iter, 1, msg[1])
-            else:
-                logger.info(msg)
+        id, value = decode(obj.get_property(params.name))
+        if id == ID_BUMPER:
+            self.bumper_img.set_from_pixbuf(BUMPER_PIXBUFS[int(value)])
+        elif id == ID_ROVER:
+            self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[int(value)])
+        elif id == ID_TELEMETRY:
+            iter = self.store.get_iter_first()
+            for i in value:
+                self.store.set_value(iter, 1, i)
+                iter = self.store.iter_next(iter)
+        else:
+            logger.warning(id, value)
         
     def on_control(self, widget, event):
         """"""
@@ -322,11 +320,11 @@ class ControlPanel(Gtk.Window):
                 if key in self.CONTROL_KEYS:
                     i = self.CONTROL_KEYS.index(key)
                     self.coms.send(encode(ID_ROVER, i))
-                    self.rover_img.set_from_pixbuf(self.PIXBUFS[i])
+                    self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[i])
             elif event.type == Gdk.EventType.KEY_RELEASE:
                 key = event.string
                 if key in self.CONTROL_KEYS:
-                    self.rover_img.set_from_pixbuf(self.PIXBUFS[0])
+                    self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[0])
 
     def on_close(self, widget, event=None):
         """"""
