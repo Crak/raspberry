@@ -12,7 +12,9 @@ GST_PORT = 5000
 
 ID_BUMPER = 1
 ID_ROVER = 2
-ID_TELEMETRY = 3
+ID_WLAN = 3
+ID_BATTERY = 4
+ID_TELEMETRY = 5
 
 def encode(id, value):
     """"""

@@ -5,7 +5,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GdkX11
 
 from common import Video, encode, decode
 from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
-from common import ID_BUMPER, ID_ROVER, ID_TELEMETRY
+from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_BATTERY, ID_TELEMETRY
 
 import socket
 import threading
@@ -16,6 +16,14 @@ IMG_ICON = "media/icon.png"
 IMG_TERMINAL = "media/icon_terminal.png"
 IMG_VIDEO = "media/icon_video.png"
 IMG_LOG = "media/icon_log.png"
+IMG_WLAN = "media/wlan.png"
+IMG_WLAN_25 = "media/wlan_25.png"
+IMG_WLAN_50 = "media/wlan_50.png"
+IMG_WLAN_75 = "media/wlan_75.png"
+IMG_WLAN_100 = "media/wlan_100.png"
+IMG_BATTERY = "media/battery.png"
+IMG_BATTERY_OK = "media/battery_ok.png"
+IMG_BATTERY_LOW = "media/battery_low.png"
 IMG_BUMPER = "media/bumper.png"
 IMG_BUMPER_LEFT = "media/bumper_left.png"
 IMG_BUMPER_RIGHT = "media/bumper_right.png"
@@ -32,6 +40,16 @@ PIXBUF_TERMINAL = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_TERMINAL, 64, 64)
 PIXBUF_VIDEO = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_VIDEO, 64, 64)
 PIXBUF_LOG = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_LOG, 64, 64)
 
+PIXBUF_WLAN = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN, 32, 32)
+PIXBUF_WLAN_25 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_25, 32, 32)
+PIXBUF_WLAN_50 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_50, 32, 32)
+PIXBUF_WLAN_75 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_75, 32, 32)
+PIXBUF_WLAN_100 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_100, 32, 32)
+
+PIXBUF_BATTERY = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_BATTERY, 32, 32)
+PIXBUF_BATTERY_OK = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_BATTERY_OK, 32, 32)
+PIXBUF_BATTERY_LOW = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_BATTERY_LOW, 32, 32)
+
 PIXBUF_BUMPER = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER)
 PIXBUF_BUMPER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_LEFT)
 PIXBUF_BUMPER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_RIGHT)
@@ -42,6 +60,18 @@ PIXBUF_ROVER_FORWARD = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_FORWARD)
 PIXBUF_ROVER_REVERSE = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_REVERSE)
 PIXBUF_ROVER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_LEFT)
 PIXBUF_ROVER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_RIGHT)
+
+WLAN_PIXBUFS = [
+PIXBUF_WLAN,
+PIXBUF_WLAN_25,
+PIXBUF_WLAN_50,
+PIXBUF_WLAN_75,
+PIXBUF_WLAN_100]
+
+BATTERY_PIXBUFS = [
+PIXBUF_BATTERY,
+PIXBUF_BATTERY_OK,
+PIXBUF_BATTERY_LOW]
 
 BUMPER_PIXBUFS = [
 PIXBUF_BUMPER_BOTH,
@@ -233,27 +263,33 @@ class ControlPanel(Gtk.Window):
 
         vbox = Gtk.VBox()
         hbox.pack_start(vbox, False, False, 5)
-
+        
         self.rover_img = Gtk.Image.new_from_pixbuf(PIXBUF_ROVER)
         self.bumper_img = Gtk.Image.new_from_pixbuf(PIXBUF_BUMPER)
-        vbox.pack_start(self.bumper_img, False, False, 5)
+        vbox.pack_start(self.bumper_img, False, False, 0)
         
         button = Gtk.ToggleButton()
         button.set_image(self.rover_img)
         button.connect("focus-out-event", self.on_control)
         button.connect("key-press-event", self.on_control)
         button.connect("key-release-event", self.on_control)
-        vbox.pack_start(button, False, False, 5)
+        vbox.pack_start(button, False, False, 0)
 
         self.store = Gtk.ListStore(str, str, str)
-        self.store.append(["Battery Status", "", ""])
-        self.store.append(["Wlan Link", "", "%"])
         self.store.append(["Range Finder", "", "cm"])
         self.store.append(["Left Encoder", "", "cm"])
         self.store.append(["Right Encoder", "", "cm"])
         
+        hbox = Gtk.HBox()
+        vbox.pack_start(hbox, False, False, 0)
+        
+        self.battery_img = Gtk.Image.new_from_pixbuf(PIXBUF_BATTERY)
+        hbox.pack_start(self.battery_img, True, True, 0)
+        self.wlan_img = Gtk.Image.new_from_pixbuf(PIXBUF_WLAN)
+        hbox.pack_start(self.wlan_img, True, True, 0)
+
         frame = Gtk.Frame()
-        vbox.pack_start(frame, True, True, 5)
+        vbox.pack_start(frame, True, True, 0)
         
         tree = Gtk.TreeView(self.store)
         tree.set_headers_visible(False)
@@ -284,6 +320,7 @@ class ControlPanel(Gtk.Window):
         
         self.coms = Communications()
         self.coms.connect("notify::reception", self.on_reception)
+        logger.info("System ready")
         
     def on_connect(self, widget, gparam):
         """"""
@@ -291,9 +328,12 @@ class ControlPanel(Gtk.Window):
             host = self.host_ip.get_text()
             self.video.new_connection(host, int(self.gst_port.get_value()))
             self.coms.new_connection(host, int(self.com_port.get_value()))
+            self.battery_img.set_from_pixbuf(BATTERY_PIXBUFS[1])
         else:
             self.video.pause()
             self.coms.disconnect()
+            self.wlan_img.set_from_pixbuf(WLAN_PIXBUFS[0])
+            self.battery_img.set_from_pixbuf(BATTERY_PIXBUFS[0])
             
     def on_reception(self, obj, params):
         """"""
@@ -302,6 +342,10 @@ class ControlPanel(Gtk.Window):
             self.bumper_img.set_from_pixbuf(BUMPER_PIXBUFS[int(value)])
         elif id == ID_ROVER:
             self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[int(value)])
+        elif id == ID_WLAN:
+            self.wlan_img.set_from_pixbuf(WLAN_PIXBUFS[(int(value)/25)+1])
+        elif id == ID_BATTERY:
+            self.battery_img.set_from_pixbuf(BATTERY_PIXBUFS[int(value)])
         elif id == ID_TELEMETRY:
             iter = self.store.get_iter_first()
             for i in value:
@@ -335,6 +379,5 @@ class ControlPanel(Gtk.Window):
 if __name__ == "__main__":
     GObject.threads_init()
     c = ControlPanel()
-    logger.info("System ready")
     Gtk.main()
     

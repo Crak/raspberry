@@ -1,6 +1,6 @@
 from common import Video, encode, decode
 from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
-from common import ID_BUMPER, ID_ROVER, ID_TELEMETRY
+from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_BATTERY, ID_TELEMETRY
 
 import RPIO
 import subprocess
@@ -57,19 +57,14 @@ class RaspiRobot2(object):
 
         RPIO.setup(self.LEFT_GO_PIN, RPIO.OUT)
         RPIO.setup(self.LEFT_DIR_PIN, RPIO.OUT)
-        
         RPIO.setup(self.RIGHT_GO_PIN, RPIO.OUT)
         RPIO.setup(self.RIGHT_DIR_PIN, RPIO.OUT)
-
         RPIO.setup(self.LED1_PIN, RPIO.OUT)
         RPIO.setup(self.LED2_PIN, RPIO.OUT)
-
         RPIO.setup(self.OC1_PIN, RPIO.OUT)
         RPIO.setup(self.OC2_PIN, RPIO.OUT)
-
         RPIO.setup(self.SW1_PIN, RPIO.IN)
         RPIO.setup(self.SW2_PIN, RPIO.IN)
-        
         RPIO.setup(self.TRIGGER_PIN, RPIO.OUT)
         RPIO.setup(self.ECHO_PIN, RPIO.IN)
         
@@ -105,6 +100,26 @@ class RaspiRobot2(object):
         """"""
         for key, value in RPIO._rpio._tcp_client_sockets.items():
             value[0].send(msg)
+        
+    def get_range(self):
+        mean = 10
+        distance = 0
+        for i in range(mean):
+            RPIO.setup(self.TRIGGER_PIN, RPIO.OUT)
+            RPIO.output(self.TRIGGER_PIN, True)
+            time.sleep(0.0001)
+            RPIO.output(self.TRIGGER_PIN, False)
+            RPIO.setup(self.TRIGGER_PIN, RPIO.IN)
+            timeout = 10000
+            while RPIO.input(self.TRIGGER_PIN) != True and timeout > 0:
+                timeout = timeout - 1
+            start = time.time()
+            timeout = 10000
+            while RPIO.input(self.TRIGGER_PIN) != False and timeout > 0:
+                timeout = timeout - 1
+            pulse_len = time.time() - start
+            distance += pulse_len / 0.000058
+        return distance/mean
 
     def on_collision(self, gpio_id, value):
         """"""
@@ -131,9 +146,11 @@ class Controller(RaspiRobot2):
     def start_timer(self):
         """"""
         if not self.exit:
-            data = ["OK", self.wlan_status()]
-            self.send(encode(ID_TELEMETRY, data))
             threading.Timer(1, self.start_timer).start()
+            self.send(encode(ID_WLAN, self.wlan_status()))
+            #self.send(encode(ID_BATTERY, 1))
+            data = ["%.2f" % self.get_range()]
+            self.send(encode(ID_TELEMETRY, data))
             
     def wlan_status(self):
         """"""
@@ -142,7 +159,7 @@ class Controller(RaspiRobot2):
         for line in f.readlines():
             line = line.strip()
             if line.startswith("wlan0"):
-                link = line.split(".")[0].split(" ")[-1]
+                link = line.split(".")[1].strip()
         f.close()
         return link
 
@@ -150,13 +167,13 @@ class Controller(RaspiRobot2):
         """"""
         id, value = decode(msg)
         if id == ID_ROVER:
-            if value == "1":
+            if value == 1:
                 self.move(0, 0)
-            elif value == "2":
+            elif value == 2:
                 self.move(1, 1)
-            elif value == "3":
+            elif value == 3:
                 self.move(0, 1)
-            elif value == "4":
+            elif value == 4:
                 self.move(1, 0)
         else:
             logger.info(id, value)
