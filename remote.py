@@ -3,9 +3,10 @@ from gi.repository import Vte, GLib
 from gi.repository import Gst, GstVideo
 from gi.repository import Gtk, Gdk, GdkPixbuf, GdkX11
 
+import common
+
 from common import Video, encode, decode
 from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
-from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_BATTERY, ID_TELEMETRY
 
 import socket
 import threading
@@ -15,19 +16,26 @@ logger = logging.getLogger()
 IMG_ICON = "media/icon.png"
 IMG_TERMINAL = "media/icon_terminal.png"
 IMG_VIDEO = "media/icon_video.png"
+IMG_MAP = "media/icon_map.png"
 IMG_LOG = "media/icon_log.png"
+IMG_LIGHTS = "media/lights.png"
+IMG_MOVE = "media/move.png"
 IMG_WLAN = "media/wlan.png"
 IMG_WLAN_25 = "media/wlan_25.png"
 IMG_WLAN_50 = "media/wlan_50.png"
 IMG_WLAN_75 = "media/wlan_75.png"
 IMG_WLAN_100 = "media/wlan_100.png"
-IMG_BATTERY = "media/battery.png"
-IMG_BATTERY_OK = "media/battery_ok.png"
-IMG_BATTERY_LOW = "media/battery_low.png"
+IMG_MAP_START = "media/map_start.png"
+IMG_MAP_UP = "media/map_up.png"
+IMG_MAP_DOWN = "media/map_down.png"
+IMG_MAP_LEFT = "media/map_left.png"
+IMG_MAP_RIGHT = "media/map_right.png"
 IMG_BUMPER = "media/bumper.png"
 IMG_BUMPER_LEFT = "media/bumper_left.png"
 IMG_BUMPER_RIGHT = "media/bumper_right.png"
 IMG_BUMPER_BOTH = "media/bumper_both.png"
+IMG_BUMPER_BACK = "media/bumper_back.png"
+IMG_BUMPER_BACK_ON = "media/bumper_back_on.png"
 IMG_ROVER = "media/rover.png"
 IMG_ROVER_FORWARD = "media/rover_forward.png"
 IMG_ROVER_REVERSE = "media/rover_reverse.png"
@@ -38,7 +46,10 @@ PIXBUF_ICON = GdkPixbuf.Pixbuf.new_from_file(IMG_ICON)
 
 PIXBUF_TERMINAL = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_TERMINAL, 64, 64)
 PIXBUF_VIDEO = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_VIDEO, 64, 64)
+PIXBUF_MAP = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_MAP, 64, 64)
 PIXBUF_LOG = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_LOG, 64, 64)
+
+PIXBUF_LIGHTS = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_LIGHTS, 32, 32)
 
 PIXBUF_WLAN = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN, 32, 32)
 PIXBUF_WLAN_25 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_25, 32, 32)
@@ -46,14 +57,20 @@ PIXBUF_WLAN_50 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_50, 32, 32)
 PIXBUF_WLAN_75 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_75, 32, 32)
 PIXBUF_WLAN_100 = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_WLAN_100, 32, 32)
 
-PIXBUF_BATTERY = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_BATTERY, 32, 32)
-PIXBUF_BATTERY_OK = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_BATTERY_OK, 32, 32)
-PIXBUF_BATTERY_LOW = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_BATTERY_LOW, 32, 32)
+PIXBUF_MAP_START = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_MAP_START, 32, 32)
+PIXBUF_MAP_UP = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_MAP_UP, 32, 32)
+PIXBUF_MAP_DOWN = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_MAP_DOWN, 32, 32)
+PIXBUF_MAP_LEFT = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_MAP_LEFT, 32, 32)
+PIXBUF_MAP_RIGHT = GdkPixbuf.Pixbuf.new_from_file_at_size(IMG_MAP_RIGHT, 32, 32)
+
+PIXBUF_MOVE = GdkPixbuf.Pixbuf.new_from_file(IMG_MOVE)
 
 PIXBUF_BUMPER = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER)
 PIXBUF_BUMPER_LEFT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_LEFT)
 PIXBUF_BUMPER_RIGHT = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_RIGHT)
 PIXBUF_BUMPER_BOTH = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_BOTH)
+PIXBUF_BUMPER_BACK = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_BACK)
+PIXBUF_BUMPER_BACK_ON = GdkPixbuf.Pixbuf.new_from_file(IMG_BUMPER_BACK_ON)
 
 PIXBUF_ROVER = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER)
 PIXBUF_ROVER_FORWARD = GdkPixbuf.Pixbuf.new_from_file(IMG_ROVER_FORWARD)
@@ -68,10 +85,12 @@ PIXBUF_WLAN_50,
 PIXBUF_WLAN_75,
 PIXBUF_WLAN_100]
 
-BATTERY_PIXBUFS = [
-PIXBUF_BATTERY,
-PIXBUF_BATTERY_OK,
-PIXBUF_BATTERY_LOW]
+MAP_PIXBUFS = [
+PIXBUF_MAP_START,
+PIXBUF_MAP_UP,
+PIXBUF_MAP_DOWN,
+PIXBUF_MAP_LEFT,
+PIXBUF_MAP_RIGHT]
 
 BUMPER_PIXBUFS = [
 PIXBUF_BUMPER_BOTH,
@@ -84,7 +103,10 @@ PIXBUF_ROVER,
 PIXBUF_ROVER_FORWARD,
 PIXBUF_ROVER_REVERSE,
 PIXBUF_ROVER_LEFT,
-PIXBUF_ROVER_RIGHT]    
+PIXBUF_ROVER_RIGHT]
+
+COLOR_BLACK = Gdk.Color(0, 0, 0)
+COLOR_WHITE = Gdk.Color(65535, 65535, 65535)
 
 class LogStream(object):
     """"""
@@ -129,6 +151,11 @@ class VideoSink(Video):
         src.set_property("host", host)
         src.set_property("port", port)
         self.play()
+        
+    def disconnect(self):
+        """"""
+        self.pause()
+        self.quit()
 
     def on_gst_sync(self, bus, msg):
         """"""
@@ -162,14 +189,15 @@ class Communications(GObject.GObject):
         
     def send(self, msg):
         """"""
-        try:
-            self.socket.send(msg)
-        except Exception, e:
-            logger.error(e)
-            self.disconnect()
-        else:
-            #logger.debug(msg)
-            pass
+        if self.socket:
+            try:
+                self.socket.send(msg)
+            except Exception, e:
+                logger.error(e)
+                self.disconnect()
+            else:
+                #logger.debug(msg)
+                pass
             
     def receive(self):
         """"""
@@ -189,10 +217,70 @@ class Communications(GObject.GObject):
         if self.socket:
             self.socket.close()
             self.socket = None
+            
+class Map(Gtk.Table):
+    """"""
+    def __init__(self, size):
+        """"""
+        Gtk.Table.__init__(self, size, size, True)
+        
+        self.size = size
+        self.new_map()
+        
+    def new_map(self):
+        """"""
+        self.map = []
+        self.x = self.size/2
+        self.y = self.size/2
+        self.add(PIXBUF_MAP_START, 0)
+        
+    def add(self, pixbuf, direction):
+        """"""
+        image = Gtk.Image.new_from_pixbuf(pixbuf)
+        image.set_state_flags(Gtk.StateFlags.SELECTED, True)
+        self.map.append((image, direction))
+        self.attach(image, self.x, self.x+1, self.y, self.y+1)
+        image.show()
+        
+    def get_map(self):
+        """"""
+        return [direction for image, direction in self.map]
+        
+    def move(self, pos):
+        """"""
+        if len(self.map) > pos:
+            self.map[pos][0].set_state_flags(Gtk.StateFlags.NORMAL, True)
+            self.map[pos-1][0].set_state_flags(Gtk.StateFlags.SELECTED, True)
+        
+    def on_clear(self, widget):
+        """"""
+        for image, direction in self.map:
+            self.remove(image)
+        self.new_map()
+
+    def on_move(self, widget, pixbuf):
+        """"""
+        if pixbuf == PIXBUF_MAP_UP and self.y > 0:
+            self.y -= 1
+            self.add(pixbuf, common.MOVE_FORDWARD)
+        elif pixbuf == PIXBUF_MAP_DOWN and self.y < self.size-1:
+            self.y += 1
+            self.add(pixbuf, common.MOVE_REVERSE)
+        elif pixbuf == PIXBUF_MAP_LEFT and self.x > 0:
+            self.x -= 1
+            self.add(pixbuf, common.MOVE_LEFT)
+        elif pixbuf == PIXBUF_MAP_RIGHT and self.x < self.size-1:
+            self.x += 1
+            self.add(pixbuf, common.MOVE_RIGHT)
 
 class ControlPanel(Gtk.Window):
     """"""
-    CONTROL_KEYS = ["", "w", "s", "a", "d"]
+    CONTROL_KEYS = {
+    "": common.MOVE_STOP,
+    "w": common.MOVE_FORDWARD,
+    "s": common.MOVE_REVERSE,
+    "a": common.MOVE_LEFT,
+    "d": common.MOVE_RIGHT}
 
     def __init__(self):
         """"""        
@@ -245,9 +333,52 @@ class ControlPanel(Gtk.Window):
         vte.fork_command_full(Vte.PtyFlags.DEFAULT, None, ["/bin/bash"], 
         None, GLib.SpawnFlags.DO_NOT_REAP_CHILD, None, None)
         notebook.append_page(vte, Gtk.Image.new_from_pixbuf(PIXBUF_TERMINAL))
-
+        
         drawing_area = Gtk.DrawingArea()
+        drawing_area.modify_bg(Gtk.StateType.NORMAL, COLOR_BLACK)
         notebook.append_page(drawing_area, Gtk.Image.new_from_pixbuf(PIXBUF_VIDEO))
+        
+        hbox2 = Gtk.HBox()
+        notebook.append_page(hbox2, Gtk.Image.new_from_pixbuf(PIXBUF_MAP))
+        
+        frame = Gtk.Frame()
+        hbox2.pack_start(frame, True, True, 0)
+
+        ebox = Gtk.EventBox()
+        ebox.modify_bg(Gtk.StateType.NORMAL, COLOR_WHITE)
+        frame.add(ebox)
+        
+        self.map = Map(17)
+        ebox.add(self.map)
+        
+        vbox2 = Gtk.VBox()
+        hbox2.pack_start(vbox2, False, False, 5)
+        
+        self.pad = Gtk.Table(3, 3)
+        vbox2.pack_start(self.pad , False, False, 5)
+        
+        button = Gtk.Button(image=Gtk.Image.new_from_pixbuf(PIXBUF_MAP_UP))
+        button.connect("clicked", self.map.on_move, PIXBUF_MAP_UP)
+        self.pad .attach(button, 1, 2, 0, 1)
+        button = Gtk.Button(image=Gtk.Image.new_from_pixbuf(PIXBUF_MAP_LEFT))
+        button.connect("clicked", self.map.on_move, PIXBUF_MAP_LEFT)
+        self.pad .attach(button, 0, 1, 1, 2)
+        button = Gtk.Button(image=Gtk.Image.new_from_pixbuf(PIXBUF_MAP_START))
+        button.connect("clicked", self.map.on_clear)
+        self.pad .attach(button, 1, 2, 1, 2)
+        button = Gtk.Button(image=Gtk.Image.new_from_pixbuf(PIXBUF_MAP_RIGHT))
+        button.connect("clicked", self.map.on_move, PIXBUF_MAP_RIGHT)
+        self.pad .attach(button, 2, 3, 1, 2)
+        button = Gtk.Button(image=Gtk.Image.new_from_pixbuf(PIXBUF_MAP_DOWN))
+        button.connect("clicked", self.map.on_move, PIXBUF_MAP_DOWN)
+        self.pad .attach(button, 1, 2, 2, 3)
+        
+        vbox2.pack_start(Gtk.VSeparator(), True, True, 5)        
+
+        self.play_button = Gtk.ToggleButton()
+        self.play_button.set_image(Gtk.Image.new_from_pixbuf(PIXBUF_MOVE))
+        self.play_button.connect("clicked", self.on_play)
+        vbox2.pack_start(self.play_button, False, False, 5)
         
         scroll = Gtk.ScrolledWindow()
         scroll.set_size_request(-1, 150)
@@ -264,29 +395,42 @@ class ControlPanel(Gtk.Window):
         vbox = Gtk.VBox()
         hbox.pack_start(vbox, False, False, 5)
         
-        self.rover_img = Gtk.Image.new_from_pixbuf(PIXBUF_ROVER)
+        frame = Gtk.Frame()
+        vbox.pack_start(frame, False, False, 0)
+        
+        vbox2 = Gtk.VBox()
+        frame.add(vbox2)
+        
         self.bumper_img = Gtk.Image.new_from_pixbuf(PIXBUF_BUMPER)
-        vbox.pack_start(self.bumper_img, False, False, 0)
+        vbox2.pack_start(self.bumper_img, False, False, 0)
         
-        button = Gtk.ToggleButton()
-        button.set_image(self.rover_img)
-        button.connect("focus-out-event", self.on_control)
-        button.connect("key-press-event", self.on_control)
-        button.connect("key-release-event", self.on_control)
-        vbox.pack_start(button, False, False, 0)
+        self.rover_img = Gtk.Image.new_from_pixbuf(PIXBUF_ROVER)
+        
+        self.control = Gtk.ToggleButton()
+        self.control.set_image(self.rover_img)
+        self.control.set_border_width(15)
+        self.control.connect("focus-out-event", self.on_control)
+        self.control.connect("key-press-event", self.on_control)
+        self.control.connect("key-release-event", self.on_control)
+        vbox2.pack_start(self.control, False, False, 0)
+        
+        self.bumper_back_img = Gtk.Image.new_from_pixbuf(PIXBUF_BUMPER_BACK)
+        vbox2.pack_start(self.bumper_back_img, False, False, 0)
+        
+        hbox  = Gtk.HBox()
+        vbox.pack_start(hbox, False, False, 5)
 
-        self.store = Gtk.ListStore(str, str, str)
-        self.store.append(["Range Finder", "", "cm"])
-        self.store.append(["Left Encoder", "", "cm"])
-        self.store.append(["Right Encoder", "", "cm"])
+        button = Gtk.ToggleButton()
+        button.set_image(Gtk.Image.new_from_pixbuf(PIXBUF_LIGHTS))
+        button.connect("clicked", self.on_lights)
+        hbox.pack_start(button, True, True, 0)
         
-        hbox = Gtk.HBox()
-        vbox.pack_start(hbox, False, False, 0)
-        
-        self.battery_img = Gtk.Image.new_from_pixbuf(PIXBUF_BATTERY)
-        hbox.pack_start(self.battery_img, True, True, 0)
         self.wlan_img = Gtk.Image.new_from_pixbuf(PIXBUF_WLAN)
         hbox.pack_start(self.wlan_img, True, True, 0)
+
+        self.store = Gtk.ListStore(str, str, str)
+        self.store.append(["Battery", "", "V"])
+        self.store.append(["Range Finder", "", "cm"])
 
         frame = Gtk.Frame()
         vbox.pack_start(frame, True, True, 0)
@@ -322,31 +466,43 @@ class ControlPanel(Gtk.Window):
         self.coms.connect("notify::reception", self.on_reception)
         logger.info("System ready")
         
+    def on_play(self, widget):
+        """"""
+        if widget.get_active():
+            map = self.map.get_map()
+            self.coms.send(encode(common.ID_MAP, map))
+            self.control.set_sensitive(False)
+            self.pad.set_sensitive(False)
+        else:
+            self.control.set_sensitive(True)
+            self.pad.set_sensitive(True)
+
     def on_connect(self, widget, gparam):
         """"""
         if widget.get_active():
             host = self.host_ip.get_text()
             self.video.new_connection(host, int(self.gst_port.get_value()))
             self.coms.new_connection(host, int(self.com_port.get_value()))
-            self.battery_img.set_from_pixbuf(BATTERY_PIXBUFS[1])
         else:
-            self.video.pause()
+            self.video.disconnect()
             self.coms.disconnect()
             self.wlan_img.set_from_pixbuf(WLAN_PIXBUFS[0])
-            self.battery_img.set_from_pixbuf(BATTERY_PIXBUFS[0])
             
     def on_reception(self, obj, params):
         """"""
         id, value = decode(obj.get_property(params.name))
-        if id == ID_BUMPER:
-            self.bumper_img.set_from_pixbuf(BUMPER_PIXBUFS[int(value)])
-        elif id == ID_ROVER:
-            self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[int(value)])
-        elif id == ID_WLAN:
-            self.wlan_img.set_from_pixbuf(WLAN_PIXBUFS[(int(value)/25)+1])
-        elif id == ID_BATTERY:
-            self.battery_img.set_from_pixbuf(BATTERY_PIXBUFS[int(value)])
-        elif id == ID_TELEMETRY:
+        if id == common.ID_BUMPER:
+            self.bumper_img.set_from_pixbuf(BUMPER_PIXBUFS[value])
+        elif id == common.ID_ROVER:
+            self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[value])
+        elif id == common.ID_MAP:
+            if value == common.MOVE_END:
+                self.play_button.set_active(False)
+            else:
+                self.map.move(value)
+        elif id == common.ID_WLAN:
+            self.wlan_img.set_from_pixbuf(WLAN_PIXBUFS[(int(value)/26)+1])
+        elif id == common.ID_TELEMETRY:
             iter = self.store.get_iter_first()
             for i in value:
                 self.store.set_value(iter, 1, i)
@@ -361,18 +517,25 @@ class ControlPanel(Gtk.Window):
                 widget.set_active(False)
             elif event.type == Gdk.EventType.KEY_PRESS:
                 key = event.string
-                if key in self.CONTROL_KEYS:
-                    i = self.CONTROL_KEYS.index(key)
-                    self.coms.send(encode(ID_ROVER, i))
+                if key in self.CONTROL_KEYS.keys():
+                    i = self.CONTROL_KEYS[key]
+                    self.coms.send(encode(common.ID_ROVER, i))
                     self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[i])
             elif event.type == Gdk.EventType.KEY_RELEASE:
                 key = event.string
-                if key in self.CONTROL_KEYS:
+                if key in self.CONTROL_KEYS.keys():
                     self.rover_img.set_from_pixbuf(ROVER_PIXBUFS[0])
+                    
+    def on_lights(self, widget):
+        """"""
+        if widget.get_active():
+            self.coms.send(encode(common.ID_LIGHTS, 1))
+        else:
+            self.coms.send(encode(common.ID_LIGHTS, 0))
 
     def on_close(self, widget, event=None):
         """"""
-        self.video.quit()
+        self.video.disconnect()
         self.coms.disconnect()
         Gtk.main_quit()
 

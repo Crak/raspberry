@@ -1,6 +1,7 @@
+import common
+
 from common import Video, encode, decode
 from common import LOG_FORMAT, HOST, COM_PORT, GST_PORT
-from common import ID_BUMPER, ID_ROVER, ID_WLAN, ID_BATTERY, ID_TELEMETRY
 
 import RPIO
 import subprocess
@@ -83,18 +84,16 @@ class RaspiRobot2(object):
     def set_oc2(self, state):
         RPIO.output(self.OC2_PIN, state)
 
-    def set_motors(self, left_go, left_dir, right_go, right_dir):
-        RPIO.output(self.LEFT_GO_PIN, left_go)
-        RPIO.output(self.LEFT_DIR_PIN, left_dir)
-        RPIO.output(self.RIGHT_GO_PIN, right_go)
-        RPIO.output(self.RIGHT_DIR_PIN, right_dir)
-
-    def move(self, left_dir, right_dir):
+    def motors(self, left_dir, right_dir):
         """"""
         #return
-        self.set_motors(1, left_dir, 1, right_dir)
+        RPIO.output(self.LEFT_DIR_PIN, left_dir)
+        RPIO.output(self.RIGHT_DIR_PIN, right_dir)
+        RPIO.output(self.RIGHT_GO_PIN, 1)
+        RPIO.output(self.LEFT_GO_PIN, 1)
         time.sleep(0.03)
-        self.set_motors(0, 0, 0, 0)        
+        RPIO.output(self.RIGHT_GO_PIN, 0)
+        RPIO.output(self.LEFT_GO_PIN, 0)
 
     def send(self, msg):
         """"""
@@ -130,7 +129,7 @@ class RaspiRobot2(object):
             result *= 2
             if RPIO.input(self.SW1_PIN):
                result +=1
-        self.send(encode(ID_BUMPER, result))
+        self.send(encode(common.ID_BUMPER, result))
 
 class Controller(RaspiRobot2):
     """"""
@@ -140,18 +139,18 @@ class Controller(RaspiRobot2):
         
         self.exit = False
         self.video = VideoSrc()
+        
         RPIO.add_tcp_callback(COM_PORT, self.process)
         self.start_timer()
  
     def start_timer(self):
         """"""
         if not self.exit:
+            self.send(encode(common.ID_WLAN, self.wlan_status()))
+            data = ["11.2", "%.2f" % self.get_range()]
+            self.send(encode(common.ID_TELEMETRY, data))
             threading.Timer(1, self.start_timer).start()
-            self.send(encode(ID_WLAN, self.wlan_status()))
-            #self.send(encode(ID_BATTERY, 1))
-            data = ["%.2f" % self.get_range()]
-            self.send(encode(ID_TELEMETRY, data))
-            
+ 
     def wlan_status(self):
         """"""
         link = ""
@@ -166,18 +165,43 @@ class Controller(RaspiRobot2):
     def process(self, socket, msg):
         """"""
         id, value = decode(msg)
-        if id == ID_ROVER:
-            if value == 1:
-                self.move(0, 0)
-            elif value == 2:
-                self.move(1, 1)
-            elif value == 3:
-                self.move(0, 1)
-            elif value == 4:
-                self.move(1, 0)
+        if id == common.ID_ROVER:
+            self.move(value)
+        elif id == common.ID_MAP:
+            self.traverse_map(value)
+        elif id == common.ID_LIGHTS:
+            if value:
+                self.set_led1(True)
+                self.set_led2(True)
+            else:
+                self.set_led1(False)
+                self.set_led2(False)
         else:
             logger.info(id, value)
+            
+    def traverse_map(self, map):
+        """"""
+        pos = 0
+        for direction in map:
+            self.send(encode(common.ID_ROVER, direction))
+            self.move(direction)
+            time.sleep(1)
+            self.send(encode(common.ID_MAP, pos))
+            pos += 1
+        self.send(encode(common.ID_MAP, common.MOVE_END))
+        self.send(encode(common.ID_ROVER, common.MOVE_STOP))
         
+    def move(self, direction):
+        """"""
+        if direction == common.MOVE_FORDWARD:
+            self.motors(0, 0)
+        elif direction == common.MOVE_REVERSE:
+            self.motors(1, 1)
+        elif direction == common.MOVE_LEFT:
+            self.motors(0, 1)
+        elif direction == common.MOVE_RIGHT:
+            self.motors(1, 0)
+
     def quit(self):
         """"""
         self.exit = True
